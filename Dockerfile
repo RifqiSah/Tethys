@@ -1,11 +1,11 @@
 #0 ==
-FROM rust:1.90 as tools
+FROM rust:1.90 AS tools
 
 RUN cargo install cargo-chef --version 0.1.71 \
  && cargo install sccache --version 0.10.0
 
 #1 ==
-FROM rust:1.90 as base
+FROM rust:1.90 AS base
 
 COPY --from=tools /usr/local/cargo/bin/* /usr/local/cargo/bin/
 

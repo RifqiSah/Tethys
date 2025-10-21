@@ -1,9 +1,67 @@
-use std::{collections::HashSet, env, time::Duration};
+use std::{env, time::Duration};
 
+use quick_xml::de::from_str;
 use regex::Regex;
 use reqwest::{Client, Proxy};
+use serde::Deserialize;
 
 use crate::{db::{get_game_server_by_game_name, update_game_configuration, update_game_version}, schemas::DnGameConfig};
+
+#[derive(Debug, Deserialize)]
+struct Document {
+  #[serde(rename = "ChannelingList", alias = "ChannelList")]
+  channel_list: Vec<ChannelingList>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChannelingList {
+  // #[serde(rename = "@AreaShowName")]
+  // area_show_name: Option<String>,
+  // #[serde(rename = "@AreaType")]
+  // area_type: Option<u32>,
+  // #[serde(rename = "@channelingName", alias = "@channel_name")]
+  // channeling_name: String,
+  #[serde(rename = "Local")]
+  locals: Vec<Local>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Local {
+  // #[serde(rename = "@localName", alias = "@local_name")]
+  // local_name: String,
+  // #[serde(rename = "@new")]
+  // new_flag: Option<u8>,
+  // #[serde(rename = "@open")]
+  // open: Option<u8>,
+  // #[serde(rename = "@partitionId")]
+  // partition_id: Option<u32>,
+  #[serde(rename = "Version", alias = "version")]
+  version: Version,
+  // #[serde(rename = "Update", alias = "update")]
+  // update: Update,
+  #[serde(rename = "Login", alias = "login")]
+  login: Vec<Login>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Version {
+  #[serde(rename = "@addr")]
+  addr: String,
+}
+
+// #[derive(Debug, Deserialize)]
+// struct Update {
+//   #[serde(rename = "@addr")]
+//   addr: String,
+// }
+
+#[derive(Debug, Deserialize)]
+struct Login {
+  #[serde(rename = "@addr")]
+  addr: String,
+  #[serde(rename = "@port")]
+  port: String,
+}
 
 async fn get_data(url: &str) -> Option<String> {
   let proxy = env::var("PROXIES").expect("PROXIES must be set");
@@ -53,21 +111,23 @@ pub async fn handle_cron() {
         continue;
       };
 
+      let xml_data: Document = from_str(&patch_config_data).expect("Unable to parse xml data!");
+      let selected_local = &xml_data.channel_list[0].locals[0];
+
       // find server ips
-      let re = Regex::new(r#"(?i)<login\s+addr="([\d.]+)".*?port="(\d+)"\s*/?>"#).unwrap();
-      let mut server_ips: Vec<String> = re
-        .captures_iter(&patch_config_data)
-        .map(|cap| format!("{}:{}", &cap[1], &cap[2]))
-        .collect::<HashSet<_>>()
-        .into_iter()
+      let mut server_ips: Vec<String> = selected_local.login
+        .iter()
+        .map(|f| {
+          format!("{}:{}", f.addr, f.port)
+        })
         .collect();
-      
+
       // sort first
       game_config.ip.sort();
       server_ips.sort();
 
       tracing::info!("* Server IPs: {:?}", server_ips);
-    
+
       // updating server IPs
       if game_config.ip != server_ips {
         game_config.ip = server_ips;
@@ -77,12 +137,9 @@ pub async fn handle_cron() {
           &serde_json::to_string(&game_config).unwrap()
         ).await;
       }
-        
-      // find latest version
-      let re = Regex::new(r#"(?i)<version\s+addr="([^"]+)"\s*/?>"#).unwrap();
-      let cap = re.captures(&patch_config_data).unwrap();
 
-      let patch_version_url = format!("{}PatchInfoServer.cfg", &cap[1].replace("http:", "https:"));
+      // find latest version
+      let patch_version_url = format!("{}PatchInfoServer.cfg", selected_local.version.addr.replace("http:", "https:"));
       tracing::debug!("* Version config url: {}", patch_version_url);
 
       let _version_data = get_data(&patch_version_url).await;
