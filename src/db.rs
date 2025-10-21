@@ -6,8 +6,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::prelude::FromRow;
 
-pub type SkSql = MySqlPool;
-
 pub use sqlx::{query, query_as, Error, MySqlPool};
 
 static DB_POOL: OnceCell<MySqlPool> = OnceCell::new();

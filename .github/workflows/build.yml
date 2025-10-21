@@ -1,0 +1,61 @@
+name: Build
+
+on:
+  push:
+    branches: ["master"]
+
+jobs:
+  dockerize:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'skip build')"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push images
+        id: docker_build
+        uses: docker/build-push-action@v6
+        with:
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          push: true
+          file: Dockerfile
+          tags: ${{ secrets.DOCKER_REPO }}:latest
+
+      - name: Image digest
+        run: echo ${{ steps.docker_build.outputs.digest }}
+
+  deploy:
+    needs: [dockerize]
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'skip deploy')"
+    steps:
+      - name: Creating proxy
+        uses: twingate/github-action@v1
+        with:
+          service-key: ${{ secrets.TWINGATE_KEY }}
+
+      - name: Connecting to server & Start deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{secrets.SSH_HOST}}
+          port: ${{ secrets.SSH_PORT}}
+          username: ${{ secrets.SSH_USERNAME }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          script: |
+            cd apps/projects/tethys
+            docker compose down --rmi all
+            docker compose pull
+            docker compose up -d
