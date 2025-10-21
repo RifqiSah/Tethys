@@ -150,7 +150,7 @@ pub async fn handle_cron() {
     for server in game_servers {
       let ips = &server.configuration.get("ip").unwrap().as_array().unwrap();
       for (i, p) in ips.iter().enumerate() {
-        let server_name = format!("{} {}", server.long_name, i + 1);
+        let server_name = format!("DN-{} {}", server.short_name.to_uppercase(), i + 1);
         let server_ip: Vec<&str> = p.as_str().unwrap().split(":").collect();
 
         let ret = check_server(&server_name, server_ip[0], server_ip[1]).await.unwrap_or(false);
