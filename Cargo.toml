@@ -20,3 +20,4 @@ tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt", "tim
 sqlx = { version = "0.8.6", features = ["mysql", "chrono", "runtime-tokio-rustls"] }
 chrono = { version = "0.4", features = ["serde"] }
 regex = "1"
+rand = "0.9"

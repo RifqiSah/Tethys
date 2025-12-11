@@ -9,7 +9,8 @@ use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 
-use crate::db::{get_game_server_by_game_name, update_server_status};
+use crate::db::{get_game_servers_by_game_name, update_server_status};
+use crate::schemas::DnGameConfig;
 
 #[derive(Default)]
 pub struct Cache {
@@ -87,7 +88,7 @@ async fn check_server(name: &str, ip: &str, port: &str) -> tokio::io::Result<boo
       tracing::debug!("[{}] Proxy connection success!", name);
 
       // read server response
-      if let Ok(Ok(n)) = timeout(Duration::from_millis(1000), stream.read(&mut buf)).await {
+      if let Ok(Ok(n)) = timeout(Duration::from_millis(5000), stream.read(&mut buf)).await {
         if n > 0 {
           tracing::info!("[{}] Response from server ({} bytes): {}", name, n, to_hex_string(&buf));
           return Ok(true);
@@ -145,13 +146,15 @@ async fn handle_server_result(short_name: &str, long_name: &str, status: bool) {
 }
 
 pub async fn handle_cron() {
-  let _game_servers = get_game_server_by_game_name("dn").await;
+  let _game_servers = get_game_servers_by_game_name("dn").await;
   if let Ok(game_servers) = _game_servers {
     for server in game_servers {
-      let ips = &server.configuration.get("ip").unwrap().as_array().unwrap();
+      let game_config: DnGameConfig = server.get_config();
+      let ips = &game_config.ip;
+
       for (i, p) in ips.iter().enumerate() {
         let server_name = format!("DN-{} {}", server.short_name.to_uppercase(), i + 1);
-        let server_ip: Vec<&str> = p.as_str().unwrap().split(":").collect();
+        let server_ip: Vec<&str> = p.split(":").collect();
 
         let ret = check_server(&server_name, server_ip[0], server_ip[1]).await.unwrap_or(false);
         handle_server_result(&server.short_name, &server_name, ret).await;

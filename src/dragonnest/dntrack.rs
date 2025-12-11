@@ -1,11 +1,8 @@
-use std::{env, time::Duration};
-
 use quick_xml::de::from_str;
 use regex::Regex;
-use reqwest::{Client, Proxy};
 use serde::Deserialize;
 
-use crate::{db::{get_game_server_by_game_name, update_game_configuration, update_game_version}, schemas::DnGameConfig};
+use crate::{db::{get_game_servers_by_game_name, update_game_configuration, update_game_version}, fetch::fetch_data, schemas::DnGameConfig};
 
 #[derive(Debug, Deserialize)]
 struct Document {
@@ -63,50 +60,17 @@ struct Login {
   port: String,
 }
 
-async fn get_data(url: &str) -> Option<String> {
-  let proxy = env::var("PROXIES").expect("PROXIES must be set");
-  let proxy = Proxy::all(proxy).expect("Failed to create proxy");
-
-  let client = Client::builder()
-    .proxy(proxy)
-    .timeout(Duration::from_secs(30))
-    .build()
-    .expect("Unable to create client builder!");
-
-  let response = client
-    .get(url)
-    .send().await
-    .expect("Unable to get response data!");
-
-  let status = response.status();
-  if !status.is_success() {
-    tracing::error!("An error occured! {:?}", status);
-    return None;
-  }
-
-  let bytes = match response.bytes().await {
-    Ok(b) => b,
-    Err(e) => {
-      tracing::error!("Failed to read bytes: {}", e);
-      return None;
-    }
-  };
-
-  let data = String::from_utf8_lossy(&bytes).to_string();
-  Some(data.trim_start_matches('\u{feff}').to_string())
-}
-
 pub async fn handle_cron() {
-  let _game_servers = get_game_server_by_game_name("dn").await;
+  let _game_servers = get_game_servers_by_game_name("dn").await;
   if let Ok(game_servers) = _game_servers {
     for server in game_servers {
-      let mut game_config: DnGameConfig = serde_json::from_value(server.configuration).expect("Unable to parse configuration field!");
+      let mut game_config: DnGameConfig = server.get_config();
       tracing::info!("Checking '{}' game config", server.long_name);
 
       let config_url = &game_config.patch_config_list;
       tracing::debug!("* Patch config url: {}", config_url);
 
-      let _patch_config_data = get_data(config_url).await;
+      let _patch_config_data = fetch_data(config_url).await;
       let Some(patch_config_data) = _patch_config_data else {
         continue;
       };
@@ -142,7 +106,7 @@ pub async fn handle_cron() {
       let patch_version_url = format!("{}PatchInfoServer.cfg", selected_local.version.addr.replace("http:", "https:"));
       tracing::debug!("* Version config url: {}", patch_version_url);
 
-      let _version_data = get_data(&patch_version_url).await;
+      let _version_data = fetch_data(&patch_version_url).await;
       let Some(version_data) = _version_data else {
         continue;
       };
