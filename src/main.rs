@@ -2,6 +2,7 @@
 mod macros;
 
 pub mod db;
+pub mod fetch;
 pub mod schemas;
 pub mod dragonnest;
 
